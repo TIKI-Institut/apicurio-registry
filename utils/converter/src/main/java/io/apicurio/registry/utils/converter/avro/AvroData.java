@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.apicurio.registry.serde.avro.NonRecordContainer;
 import io.apicurio.registry.utils.converter.ConnectEnum;
 import io.apicurio.registry.utils.converter.ConnectUnion;
+import io.debezium.time.Interval;
 import io.debezium.time.IsoDate;
 import io.debezium.time.IsoTime;
 import io.debezium.time.IsoTimestamp;
@@ -38,9 +39,11 @@ import java.math.BigDecimal;
 import java.net.URLEncoder;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.Period;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.regex.Pattern;
@@ -392,14 +395,18 @@ public class AvroData {
     static final String AVRO_LOGICAL_TIME_MICROS = "time-micros";
     static final String AVRO_LOGICAL_DATE = "date";
     static final String AVRO_LOGICAL_DECIMAL = "decimal";
+    static final String AVRO_LOGICAL_DURATION = "duration";
     static final String AVRO_LOGICAL_DECIMAL_SCALE_PROP = "scale";
     static final String AVRO_LOGICAL_DECIMAL_PRECISION_PROP = "precision";
+    static final String AVRO_DEBEZIUM_DURATION_NAME_PROP = "debeziumInterval";
+    static final Integer AVRO_DURATION_FIXED_SIZE_PROP = 12;
     static final String CONNECT_AVRO_FIXED_SIZE_PROP = "connect.fixed.size";
     static final String CONNECT_AVRO_DECIMAL_PRECISION_PROP = "connect.decimal.precision";
     static final Integer CONNECT_AVRO_DECIMAL_PRECISION_DEFAULT = 64;
 
     private static final Map<String, org.apache.avro.Schema> DEBEZIUM_AVRO_SCHEMA_BUILDERS = new HashMap<>();
     static {
+        DEBEZIUM_AVRO_SCHEMA_BUILDERS.put(Interval.SCHEMA_NAME, org.apache.avro.SchemaBuilder.builder().fixed(AVRO_DEBEZIUM_DURATION_NAME_PROP).size(AVRO_DURATION_FIXED_SIZE_PROP));
         DEBEZIUM_AVRO_SCHEMA_BUILDERS.put(IsoDate.SCHEMA_NAME, org.apache.avro.SchemaBuilder.builder().intType());
         DEBEZIUM_AVRO_SCHEMA_BUILDERS.put(IsoTime.SCHEMA_NAME, org.apache.avro.SchemaBuilder.builder().intType());
         DEBEZIUM_AVRO_SCHEMA_BUILDERS.put(IsoTimestamp.SCHEMA_NAME, org.apache.avro.SchemaBuilder.builder().longType());
@@ -424,10 +431,28 @@ public class AvroData {
             @Override
             public Object convert(Schema schema, Object value) {
 
-                if (!(io.debezium.time.IsoDate.SCHEMA_NAME.equals(schema.name())))
-                    throw new DataException("Requested conversion of IsoDate but the schema does not match.");
-                long epochDay = LocalDate.parse((String) value).toEpochDay();
-                return (int) epochDay;
+                if (!(io.debezium.time.Interval.SCHEMA_NAME.equals(schema.name())))
+                    throw new DataException("Requested conversion of Interval but the schema does not match.");
+
+                Period period = null;
+                Duration duration = null;
+
+                // Split the interval string at T as Java handles intervals of different lengths either in an instance
+                // of Period or Duration
+                String[] intervalParts = ((String) value).split("T");
+
+                if (!intervalParts[0].equals("P"))
+                    period = Period.parse(intervalParts[0]);
+
+                if (intervalParts.length > 1)
+                    duration = Duration.parse("PT" + intervalParts[1]);
+
+                int months = period != null ? Integer.reverseBytes((int) period.toTotalMonths()) : 0;
+                int days = period != null ? Integer.reverseBytes(period.getDays()) : 0;
+                int millis = duration != null ? Integer.reverseBytes((int) duration.toMillis()) : 0;
+
+                return ByteBuffer.allocate(12).putInt(months).putInt(days).putInt(millis).array();
+
             }
         });
 
@@ -738,11 +763,11 @@ public class AvroData {
                             String enumSchemaName = schema.parameters().get(AVRO_TYPE_ENUM);
                             value = enumSymbol(avroSchema, value, enumSchemaName);
                         }
-                        else if (schema != null && schema.name() != null && DEBEZIUM_AVRO_SCHEMA_BUILDERS.containsKey(schema.name())) {
-
-                        }
                         else {
-                            String stringValue = (String) value; // Check for correct type
+                            // Do not check for correct type for certain debezium time types
+                            if (!(schema != null && schema.name() != null && DEBEZIUM_AVRO_SCHEMA_BUILDERS.containsKey(schema.name()))) {
+                                String stringValue = (String) value; // Check for correct type
+                            }
                         }
                     return maybeAddContainer(avroSchema,
                             maybeWrapSchemaless(schema, value, ANYTHING_SCHEMA_STRING_FIELD),
@@ -1254,12 +1279,16 @@ public class AvroData {
                     org.apache.avro.LogicalTypes.date().addToSchema(baseSchema);
                 } else if (io.debezium.time.Date.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
                     org.apache.avro.LogicalTypes.date().addToSchema(baseSchema);
+                } else if (io.debezium.time.Interval.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
+                    org.apache.avro.LogicalTypes.duration().addToSchema(baseSchema);
                 } else if (io.debezium.time.IsoDate.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
                     org.apache.avro.LogicalTypes.date().addToSchema(baseSchema);
                 } else if (io.debezium.time.IsoTime.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
                     org.apache.avro.LogicalTypes.timeMillis().addToSchema(baseSchema);
                 } else if (io.debezium.time.IsoTimestamp.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
                     org.apache.avro.LogicalTypes.timestampMillis().addToSchema(baseSchema);
+                } else if (io.debezium.time.MicroDuration.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
+                    org.apache.avro.LogicalTypes.duration().addToSchema(baseSchema);
                 } else if (io.debezium.time.MicroTime.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
                     org.apache.avro.LogicalTypes.timeMicros().addToSchema(baseSchema);
                 } else if (io.debezium.time.MicroTimestamp.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
@@ -1301,12 +1330,16 @@ public class AvroData {
                     baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_DATE);
                 } else if (io.debezium.time.Date.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
                     baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_DATE);
+                } else if (io.debezium.time.Interval.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
+                    baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_DURATION);
                 } else if (io.debezium.time.IsoDate.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
                     baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_DATE);
                 } else if (io.debezium.time.IsoTime.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
                     baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_TIME_MILLIS);
                 } else if (io.debezium.time.IsoTimestamp.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
                     baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_TIMESTAMP_MILLIS);
+                } else if (io.debezium.time.MicroDuration.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
+                    baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_DURATION);
                 } else if (io.debezium.time.MicroTime.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
                     baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_TIME_MICROS);
                 } else if (io.debezium.time.MicroTimestamp.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {

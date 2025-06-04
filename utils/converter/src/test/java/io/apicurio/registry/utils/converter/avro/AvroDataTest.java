@@ -1,5 +1,6 @@
 package io.apicurio.registry.utils.converter.avro;
 
+import io.debezium.time.Interval;
 import io.debezium.time.IsoDate;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.generic.GenericRecordBuilder;
@@ -9,6 +10,8 @@ import org.apache.kafka.connect.data.Struct;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
+import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -120,8 +123,37 @@ public class AvroDataTest {
     }
 
     @Test
+    public void testDebeziumIntervalType() {
+        String interval = io.debezium.time.Interval.toIsoString(1, 2, 3, 4, 5, BigDecimal.valueOf(6));
+
+        int leMonths = Integer.reverseBytes(14);
+        int leDays = Integer.reverseBytes(3);
+        int leMillis = Integer.reverseBytes(4*60*60*1_000 + 5*60*1_000 + 6*1_000);
+
+        byte[] fixedInterval = ByteBuffer.allocate(12).putInt(leMonths).putInt(leDays).putInt(leMillis).array();
+
+        String expectedAvroSchemaString =
+            "{" +
+            "  \"type\" : \"fixed\"," +
+            "  \"name\" : \"debeziumInterval\"," +
+            "  \"size\" : 12," +
+            "  \"connect.version\" : 1," +
+            "  \"connect.name\" : \"" + Interval.SCHEMA_NAME + "\"," +
+            "  \"logicalType\" : \"duration\"" +
+            "}";
+
+        org.apache.avro.Schema expectedTypeSchema = new org.apache.avro.Schema.Parser().parse(expectedAvroSchemaString);
+        SchemaAndValue outputSchemaValue = this.debeziumAvroToConnect(io.debezium.time.Interval.SCHEMA_NAME, "string", interval);
+        Assertions.assertEquals(interval, (((Struct) outputSchemaValue.value()).get(EXAMPLE_VALUE_NAME)));
+
+        GenericRecord outputRecord = this.genericRecordFromConnect(outputSchemaValue);
+        Assertions.assertTrue(outputRecord.getSchema().getField(EXAMPLE_VALUE_NAME).schema().getTypes().contains(expectedTypeSchema));
+        Assertions.assertArrayEquals(fixedInterval, (byte[]) outputRecord.get(EXAMPLE_VALUE_NAME));
+    }
+
+    @Test
     public void testDebeziumIsoDateType() {
-        // ZonedDateTime.format with DateTimeFormatter.ISO_DATE or ISO_OFFSET_DATE returns the ISO date with a Z appended ("2025-01-01Z")
+        // ZonedDateTime.format with DateTimeFormatter.ISO_DATE or ISO_OFFSET_DATE returns the ISO date with a Z appended (e.g. "2025-01-01Z")
         // String isoDate = io.debezium.time.IsoDate.toIsoString(LocalDate.ofYearDay(2025, 1), null);
         String isoDate = "2025-01-01";
         int daysSinceEpoch = (int) LocalDate.parse(isoDate, DateTimeFormatter.ISO_DATE).toEpochDay();
@@ -247,6 +279,7 @@ public class AvroDataTest {
         Assertions.assertTrue(this.isRecordValid(outputRecord, Long.class, expectedTypeSchema));
         Assertions.assertEquals(unixTimestamp, outputRecord.get(EXAMPLE_VALUE_NAME));
     }
+
 
     private org.apache.avro.Schema expectedAvroTypeSchema(String connectName, String primitiveType, String logicalType) {
         String typeSchemaString =
