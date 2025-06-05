@@ -2,6 +2,7 @@ package io.apicurio.registry.utils.converter.avro;
 
 import io.debezium.time.Interval;
 import io.debezium.time.IsoDate;
+import io.debezium.time.MicroDuration;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.generic.GenericRecordBuilder;
 import org.apache.kafka.connect.data.Schema;
@@ -135,7 +136,7 @@ public class AvroDataTest {
         String expectedAvroSchemaString =
             "{" +
             "  \"type\" : \"fixed\"," +
-            "  \"name\" : \"debeziumInterval\"," +
+            "  \"name\" : \"debeziumDuration\"," +
             "  \"size\" : 12," +
             "  \"connect.version\" : 1," +
             "  \"connect.name\" : \"" + Interval.SCHEMA_NAME + "\"," +
@@ -197,6 +198,34 @@ public class AvroDataTest {
         GenericRecord outputRecord = this.genericRecordFromConnect(outputSchemaValue);
         Assertions.assertTrue(this.isRecordValid(outputRecord, Long.class, expectedTypeSchema));
         Assertions.assertEquals(epochMilli, outputRecord.get(EXAMPLE_VALUE_NAME));
+    }
+
+    @Test
+    public void testDebeziumMicroDurationType() {
+        long durationMicros = io.debezium.time.MicroDuration.durationMicros(0, 0, 3, 4, 5, 6, null);
+
+        int leDays = Integer.reverseBytes(3);
+        int leMillis = Integer.reverseBytes(4*60*60*1_000 + 5*60*1_000 + 6*1_000);
+
+        byte[] fixedDuration = ByteBuffer.allocate(12).putInt(0).putInt(leDays).putInt(leMillis).array();
+
+        String expectedAvroSchemaString =
+                "{" +
+                "  \"type\" : \"fixed\"," +
+                "  \"name\" : \"debeziumDuration\"," +
+                "  \"size\" : 12," +
+                "  \"connect.version\" : 1," +
+                "  \"connect.name\" : \"" + MicroDuration.SCHEMA_NAME + "\"," +
+                "  \"logicalType\" : \"duration\"" +
+                "}";
+
+        org.apache.avro.Schema expectedTypeSchema = new org.apache.avro.Schema.Parser().parse(expectedAvroSchemaString);
+        SchemaAndValue outputSchemaValue = this.debeziumAvroToConnect(io.debezium.time.MicroDuration.SCHEMA_NAME, "long", durationMicros);
+        Assertions.assertEquals(durationMicros, (((Struct) outputSchemaValue.value()).get(EXAMPLE_VALUE_NAME)));
+
+        GenericRecord outputRecord = this.genericRecordFromConnect(outputSchemaValue);
+        Assertions.assertTrue(outputRecord.getSchema().getField(EXAMPLE_VALUE_NAME).schema().getTypes().contains(expectedTypeSchema));
+        Assertions.assertArrayEquals(fixedDuration, (byte[]) outputRecord.get(EXAMPLE_VALUE_NAME));
     }
 
     @Test

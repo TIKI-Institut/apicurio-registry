@@ -13,6 +13,7 @@ import io.debezium.time.Interval;
 import io.debezium.time.IsoDate;
 import io.debezium.time.IsoTime;
 import io.debezium.time.IsoTimestamp;
+import io.debezium.time.MicroDuration;
 import io.debezium.time.ZonedTime;
 import io.debezium.time.ZonedTimestamp;
 import org.apache.avro.AvroTypeException;
@@ -46,6 +47,7 @@ import java.time.LocalTime;
 import java.time.Period;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 /**
@@ -398,7 +400,7 @@ public class AvroData {
     static final String AVRO_LOGICAL_DURATION = "duration";
     static final String AVRO_LOGICAL_DECIMAL_SCALE_PROP = "scale";
     static final String AVRO_LOGICAL_DECIMAL_PRECISION_PROP = "precision";
-    static final String AVRO_DEBEZIUM_DURATION_NAME_PROP = "debeziumInterval";
+    static final String AVRO_DEBEZIUM_DURATION_NAME_PROP = "debeziumDuration";
     static final Integer AVRO_DURATION_FIXED_SIZE_PROP = 12;
     static final String CONNECT_AVRO_FIXED_SIZE_PROP = "connect.fixed.size";
     static final String CONNECT_AVRO_DECIMAL_PRECISION_PROP = "connect.decimal.precision";
@@ -410,6 +412,7 @@ public class AvroData {
         DEBEZIUM_AVRO_SCHEMA_BUILDERS.put(IsoDate.SCHEMA_NAME, org.apache.avro.SchemaBuilder.builder().intType());
         DEBEZIUM_AVRO_SCHEMA_BUILDERS.put(IsoTime.SCHEMA_NAME, org.apache.avro.SchemaBuilder.builder().intType());
         DEBEZIUM_AVRO_SCHEMA_BUILDERS.put(IsoTimestamp.SCHEMA_NAME, org.apache.avro.SchemaBuilder.builder().longType());
+        DEBEZIUM_AVRO_SCHEMA_BUILDERS.put(MicroDuration.SCHEMA_NAME, org.apache.avro.SchemaBuilder.builder().fixed(AVRO_DEBEZIUM_DURATION_NAME_PROP).size(AVRO_DURATION_FIXED_SIZE_PROP));
         DEBEZIUM_AVRO_SCHEMA_BUILDERS.put(ZonedTime.SCHEMA_NAME, org.apache.avro.SchemaBuilder.builder().intType());
         DEBEZIUM_AVRO_SCHEMA_BUILDERS.put(ZonedTimestamp.SCHEMA_NAME, org.apache.avro.SchemaBuilder.builder().longType());
     }
@@ -484,6 +487,31 @@ public class AvroData {
                 if (!(io.debezium.time.IsoTimestamp.SCHEMA_NAME.equals(schema.name())))
                     throw new DataException("Requested conversion of IsoTimestamp but the schema does not match.");
                 return Instant.parse((String) value).toEpochMilli();
+            }
+        });
+
+        TO_AVRO_LOGICAL_CONVERTERS.put(io.debezium.time.MicroDuration.SCHEMA_NAME, new LogicalTypeConverter() {
+            @Override
+            public Object convert(Schema schema, Object value) {
+
+                if (!(io.debezium.time.MicroDuration.SCHEMA_NAME.equals(schema.name())))
+                    throw new DataException("Requested conversion of MicroDuration but the schema does not match.");
+
+                long durationMicros = (long) value;
+                int daysInDuration = 0;
+                Period period = null;
+
+                long microsInDay = TimeUnit.MICROSECONDS.convert(1, TimeUnit.DAYS);
+
+                if (durationMicros > microsInDay) {
+                    daysInDuration = Math.toIntExact(TimeUnit.DAYS.convert(durationMicros, TimeUnit.MICROSECONDS));
+                    durationMicros = durationMicros % microsInDay;
+                }
+                int durationMillis = Math.toIntExact(TimeUnit.MILLISECONDS.convert(durationMicros, TimeUnit.MICROSECONDS));
+
+                int leDays = Integer.reverseBytes(daysInDuration);
+                int leMillis = Integer.reverseBytes(durationMillis);
+                return ByteBuffer.allocate(12).putInt(0).putInt(leDays).putInt(leMillis).array();
             }
         });
 
@@ -736,7 +764,9 @@ public class AvroData {
                     return maybeAddContainer(avroSchema,
                             maybeWrapSchemaless(schema, value, ANYTHING_SCHEMA_INT_FIELD), requireContainer);
                 case INT64:
-                    Long longValue = (Long) value; // Check for correct type
+                    if (!(schema != null && schema.name() != null && DEBEZIUM_AVRO_SCHEMA_BUILDERS.containsKey(schema.name()))) {
+                        Long longValue = (Long) value; // Check for correct type
+                    }
                     return maybeAddContainer(avroSchema,
                             maybeWrapSchemaless(schema, value, ANYTHING_SCHEMA_LONG_FIELD), requireContainer);
                 case FLOAT32:
@@ -1072,7 +1102,12 @@ public class AvroData {
                 baseSchema = org.apache.avro.SchemaBuilder.builder().intType();
                 break;
             case INT64:
-                baseSchema = org.apache.avro.SchemaBuilder.builder().longType();
+                if (schema.name() != null && DEBEZIUM_AVRO_SCHEMA_BUILDERS.containsKey(schema.name())) {
+                    baseSchema = DEBEZIUM_AVRO_SCHEMA_BUILDERS.get(schema.name());
+                }
+                else {
+                    baseSchema = org.apache.avro.SchemaBuilder.builder().longType();
+                }
                 break;
             case FLOAT32:
                 baseSchema = org.apache.avro.SchemaBuilder.builder().floatType();
