@@ -1,10 +1,14 @@
 package io.apicurio.registry.utils.converter.avro;
 
+import io.apicurio.registry.serde.avro.NonRecordContainer;
 import io.debezium.time.Interval;
 import io.debezium.time.IsoDate;
 import io.debezium.time.MicroDuration;
+import org.apache.avro.Conversions;
+import org.apache.avro.LogicalTypes;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.generic.GenericRecordBuilder;
+import org.apache.avro.util.TimePeriod;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.SchemaAndValue;
 import org.apache.kafka.connect.data.Struct;
@@ -202,12 +206,7 @@ public class AvroDataTest {
 
     @Test
     public void testDebeziumMicroDurationType() {
-        long durationMicros = io.debezium.time.MicroDuration.durationMicros(0, 0, 3, 4, 5, 6, null);
-
-        int leDays = Integer.reverseBytes(3);
-        int leMillis = Integer.reverseBytes(4*60*60*1_000 + 5*60*1_000 + 6*1_000);
-
-        byte[] fixedDuration = ByteBuffer.allocate(12).putInt(0).putInt(leDays).putInt(leMillis).array();
+        long durationMicros = MicroDuration.durationMicros(0, 0, 3, 4, 5, 6, null);
 
         String expectedAvroSchemaString =
                 "{" +
@@ -220,12 +219,16 @@ public class AvroDataTest {
                 "}";
 
         org.apache.avro.Schema expectedTypeSchema = new org.apache.avro.Schema.Parser().parse(expectedAvroSchemaString);
-        SchemaAndValue outputSchemaValue = this.debeziumAvroToConnect(io.debezium.time.MicroDuration.SCHEMA_NAME, "long", durationMicros);
-        Assertions.assertEquals(durationMicros, (((Struct) outputSchemaValue.value()).get(EXAMPLE_VALUE_NAME)));
+        TimePeriod avroTimePeriod = TimePeriod.of(0, 3, 4*60*60*1_000 + 5*60*1_000 + 6*1_000);
+        byte[] expectedAvroDurationFixedBytes = new Conversions.DurationConversion().toFixed(avroTimePeriod, expectedTypeSchema, LogicalTypes.duration()).bytes();
 
-        GenericRecord outputRecord = this.genericRecordFromConnect(outputSchemaValue);
-        Assertions.assertTrue(outputRecord.getSchema().getField(EXAMPLE_VALUE_NAME).schema().getTypes().contains(expectedTypeSchema));
-        Assertions.assertArrayEquals(fixedDuration, (byte[]) outputRecord.get(EXAMPLE_VALUE_NAME));
+        SchemaAndValue connectValue = new SchemaAndValue(MicroDuration.schema(), durationMicros);
+        AvroData avroData = new AvroData(0);
+        //noinspection unchecked
+        NonRecordContainer<Byte[]> result = (NonRecordContainer<Byte[]>) avroData.fromConnectData(connectValue.schema(), connectValue.value());
+
+        Assertions.assertEquals(expectedTypeSchema, result.getSchema());
+        Assertions.assertArrayEquals(expectedAvroDurationFixedBytes, (byte[]) result.getValue());
     }
 
     @Test
