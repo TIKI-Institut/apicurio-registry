@@ -9,9 +9,6 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.apicurio.registry.serde.avro.NonRecordContainer;
 import io.apicurio.registry.utils.converter.ConnectEnum;
 import io.apicurio.registry.utils.converter.ConnectUnion;
-import io.debezium.time.MicroDuration;
-import io.debezium.time.ZonedTime;
-import io.debezium.time.ZonedTimestamp;
 import org.apache.avro.AvroTypeException;
 import org.apache.avro.JsonProperties;
 import org.apache.avro.generic.GenericData;
@@ -35,13 +32,8 @@ import java.io.UnsupportedEncodingException;
 import java.math.BigDecimal;
 import java.net.URLEncoder;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
-import java.time.Instant;
-import java.time.LocalTime;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 /**
@@ -238,22 +230,11 @@ public class AvroData {
     static final String AVRO_LOGICAL_TIME_MICROS = "time-micros";
     static final String AVRO_LOGICAL_DATE = "date";
     static final String AVRO_LOGICAL_DECIMAL = "decimal";
-    static final String AVRO_LOGICAL_DURATION = "duration";
     static final String AVRO_LOGICAL_DECIMAL_SCALE_PROP = "scale";
     static final String AVRO_LOGICAL_DECIMAL_PRECISION_PROP = "precision";
-    static final String AVRO_DEBEZIUM_DURATION_NAME_PROP = "debeziumDuration";
-    static final Integer AVRO_DURATION_FIXED_SIZE_PROP = 12;
     static final String CONNECT_AVRO_FIXED_SIZE_PROP = "connect.fixed.size";
     static final String CONNECT_AVRO_DECIMAL_PRECISION_PROP = "connect.decimal.precision";
     static final Integer CONNECT_AVRO_DECIMAL_PRECISION_DEFAULT = 64;
-
-    private static final Map<String, org.apache.avro.Schema> DEBEZIUM_AVRO_SCHEMA_BUILDERS = new HashMap<>();
-
-    static {
-        DEBEZIUM_AVRO_SCHEMA_BUILDERS.put(MicroDuration.SCHEMA_NAME, org.apache.avro.SchemaBuilder.builder().fixed(AVRO_DEBEZIUM_DURATION_NAME_PROP).size(AVRO_DURATION_FIXED_SIZE_PROP));
-        DEBEZIUM_AVRO_SCHEMA_BUILDERS.put(ZonedTime.SCHEMA_NAME, org.apache.avro.SchemaBuilder.builder().intType());
-        DEBEZIUM_AVRO_SCHEMA_BUILDERS.put(ZonedTimestamp.SCHEMA_NAME, org.apache.avro.SchemaBuilder.builder().longType());
-    }
 
     private static final HashMap<String, LogicalTypeConverter> TO_AVRO_LOGICAL_CONVERTERS = new HashMap<>();
 
@@ -266,33 +247,6 @@ public class AvroData {
                 if (!(io.debezium.time.Date.SCHEMA_NAME.equals(schema.name())))
                     throw new DataException("Requested conversion of Date but the schema does not match.");
                 return io.debezium.time.Date.toEpochDay(value, null);
-            }
-        });
-
-        TO_AVRO_LOGICAL_CONVERTERS.put(io.debezium.time.MicroDuration.SCHEMA_NAME, new LogicalTypeConverter() {
-            @Override
-            public Object convert(Schema schema, Object value) {
-
-                if (!(io.debezium.time.MicroDuration.SCHEMA_NAME.equals(schema.name())))
-                    throw new DataException("Requested conversion of MicroDuration but the schema does not match.");
-
-                long durationMicros = (long) value;
-                int daysInDuration = 0;
-
-                long microsInDay = TimeUnit.MICROSECONDS.convert(1, TimeUnit.DAYS);
-
-                // TODO: months
-                if (durationMicros > microsInDay) {
-                    daysInDuration = Math.toIntExact(TimeUnit.DAYS.convert(durationMicros, TimeUnit.MICROSECONDS));
-                    durationMicros = durationMicros % microsInDay;
-                }
-                int durationMillis = Math.toIntExact(TimeUnit.MILLISECONDS.convert(durationMicros, TimeUnit.MICROSECONDS));
-
-                return ByteBuffer.allocate(12).order(ByteOrder.LITTLE_ENDIAN)
-                        .putInt(0)
-                        .putInt(daysInDuration)
-                        .putInt(durationMillis)
-                        .array();
             }
         });
 
@@ -333,24 +287,6 @@ public class AvroData {
                 if (!(io.debezium.time.Timestamp.SCHEMA_NAME.equals(schema.name())))
                     throw new DataException("Requested conversion of Timestamp but the schema does not match.");
                 return value;
-            }
-        });
-
-        TO_AVRO_LOGICAL_CONVERTERS.put(io.debezium.time.ZonedTime.SCHEMA_NAME, new LogicalTypeConverter() {
-            @Override
-            public Object convert(Schema schema, Object value) {
-                if (!(io.debezium.time.ZonedTime.SCHEMA_NAME.equals(schema.name())))
-                    throw new DataException("Requested conversion of ZonedTime but the schema does not match.");
-                return (int) (LocalTime.parse((String) value, DateTimeFormatter.ISO_TIME).toNanoOfDay() / 1_000_000);
-            }
-        });
-
-        TO_AVRO_LOGICAL_CONVERTERS.put(io.debezium.time.ZonedTimestamp.SCHEMA_NAME, new LogicalTypeConverter() {
-            @Override
-            public Object convert(Schema schema, Object value) {
-                if (!(io.debezium.time.ZonedTimestamp.SCHEMA_NAME.equals(schema.name())))
-                    throw new DataException("Requested conversion of ZonedTimestamp but the schema does not match.");
-                return Instant.parse((String) value).toEpochMilli();
             }
         });
 
@@ -490,9 +426,9 @@ public class AvroData {
      * @return the converted data
      */
     private Object fromConnectData(Schema schema, org.apache.avro.Schema avroSchema, Object logicalValue,
-                                   boolean requireContainer, boolean requireSchemalessContainerNull) {
+            boolean requireContainer, boolean requireSchemalessContainerNull) {
         Schema.Type schemaType = schema != null ? schema.type()
-                : schemaTypeForSchemalessJavaType(logicalValue);
+            : schemaTypeForSchemalessJavaType(logicalValue);
         if (schemaType == null) {
             // Schemaless null data since schema is null and we got a null schema type from the value
             if (requireSchemalessContainerNull) {
@@ -545,9 +481,7 @@ public class AvroData {
                     return maybeAddContainer(avroSchema,
                             maybeWrapSchemaless(schema, value, ANYTHING_SCHEMA_INT_FIELD), requireContainer);
                 case INT64:
-                    if (!(schema != null && schema.name() != null && DEBEZIUM_AVRO_SCHEMA_BUILDERS.containsKey(schema.name()))) {
-                        Long longValue = (Long) value; // Check for correct type
-                    }
+                    Long longValue = (Long) value; // Check for correct type
                     return maybeAddContainer(avroSchema,
                             maybeWrapSchemaless(schema, value, ANYTHING_SCHEMA_LONG_FIELD), requireContainer);
                 case FLOAT32:
@@ -574,10 +508,7 @@ public class AvroData {
                         String enumSchemaName = schema.parameters().get(AVRO_TYPE_ENUM);
                         value = enumSymbol(avroSchema, value, enumSchemaName);
                     } else {
-                        // Do not check for correct type for certain debezium time types
-                        if (!(schema != null && schema.name() != null && DEBEZIUM_AVRO_SCHEMA_BUILDERS.containsKey(schema.name()))) {
-                            String stringValue = (String) value; // Check for correct type
-                        }
+                        String stringValue = (String) value; // Check for correct type
                     }
                     return maybeAddContainer(avroSchema,
                             maybeWrapSchemaless(schema, value, ANYTHING_SCHEMA_STRING_FIELD),
@@ -594,7 +525,7 @@ public class AvroData {
                                 if (memberSchema.getType() == org.apache.avro.Schema.Type.FIXED
                                         && memberSchema.getFixedSize() == size
                                         && unionMemberFieldName(memberSchema, index)
-                                        .equals(unionMemberFieldName(schema, index))) {
+                                                .equals(unionMemberFieldName(schema, index))) {
                                     fixedSchema = memberSchema;
                                 }
                                 index++;
@@ -620,7 +551,7 @@ public class AvroData {
                     org.apache.avro.Schema underlyingAvroSchema = avroSchemaForUnderlyingTypeIfOptional(
                             schema, avroSchema, scrubInvalidNames);
                     org.apache.avro.Schema elementAvroSchema = schema != null
-                            ? underlyingAvroSchema.getElementType() : ANYTHING_SCHEMA;
+                        ? underlyingAvroSchema.getElementType() : ANYTHING_SCHEMA;
                     for (Object val : list) {
                         converted.add(fromConnectData(elementSchema, elementAvroSchema, val, false, true));
                     }
@@ -650,7 +581,7 @@ public class AvroData {
                         List<GenericRecord> converted = new ArrayList<>(map.size());
                         underlyingAvroSchema = avroSchemaForUnderlyingMapEntryType(schema, avroSchema);
                         org.apache.avro.Schema elementSchema = schema != null
-                                ? underlyingAvroSchema.getElementType() : ANYTHING_SCHEMA_MAP_ELEMENT;
+                            ? underlyingAvroSchema.getElementType() : ANYTHING_SCHEMA_MAP_ELEMENT;
                         org.apache.avro.Schema avroKeySchema = elementSchema.getField(KEY_FIELD).schema();
                         org.apache.avro.Schema avroValueSchema = elementSchema.getField(VALUE_FIELD).schema();
                         for (Map.Entry<Object, Object> entry : map.entrySet()) {
@@ -678,7 +609,7 @@ public class AvroData {
                     if (isUnionSchema(schema)) {
                         for (Field field : schema.fields()) {
                             Object object = ignoreDefaultForNullables ? struct.getWithoutDefault(field.name())
-                                    : struct.get(field);
+                                : struct.get(field);
                             if (object != null) {
                                 return fromConnectData(field.schema(), avroSchema, object, false, true);
                             }
@@ -694,7 +625,7 @@ public class AvroData {
                             org.apache.avro.Schema.Field theField = underlyingAvroSchema.getField(fieldName);
                             org.apache.avro.Schema fieldAvroSchema = theField.schema();
                             Object fieldValue = ignoreDefaultForNullables
-                                    ? struct.getWithoutDefault(field.name()) : struct.get(field);
+                                ? struct.getWithoutDefault(field.name()) : struct.get(field);
                             convertedBuilder.set(fieldName, fromConnectData(field.schema(), fieldAvroSchema,
                                     fieldValue, false, true));
                         }
@@ -711,7 +642,7 @@ public class AvroData {
     }
 
     private GenericData.EnumSymbol enumSymbol(org.apache.avro.Schema avroSchema, Object value,
-                                              String enumSchemaName) {
+            String enumSchemaName) {
         org.apache.avro.Schema enumSchema;
         if (avroSchema.getType() == org.apache.avro.Schema.Type.UNION) {
             int enumIndex = avroSchema.getIndexNamed(enumSchemaName);
@@ -727,7 +658,7 @@ public class AvroData {
      * union instead of the union itself.
      */
     private static org.apache.avro.Schema avroSchemaForUnderlyingMapEntryType(Schema schema,
-                                                                              org.apache.avro.Schema avroSchema) {
+            org.apache.avro.Schema avroSchema) {
 
         if (schema != null && schema.isOptional()) {
             if (avroSchema.getType() == org.apache.avro.Schema.Type.UNION) {
@@ -746,7 +677,7 @@ public class AvroData {
     }
 
     private static boolean crossReferenceSchemaNames(final Schema schema,
-                                                     final org.apache.avro.Schema avroSchema, final boolean scrubInvalidNames) {
+            final org.apache.avro.Schema avroSchema, final boolean scrubInvalidNames) {
         String fullName = scrubFullName(schema.name(), scrubInvalidNames);
         return Objects.equals(avroSchema.getFullName(), fullName)
                 || Objects.equals(avroSchema.getType().getName(), schema.type().getName())
@@ -758,7 +689,7 @@ public class AvroData {
      * actual type in the Union (instead of the union itself)
      */
     private static org.apache.avro.Schema avroSchemaForUnderlyingTypeIfOptional(Schema schema,
-                                                                                org.apache.avro.Schema avroSchema, boolean scrubInvalidNames) {
+            org.apache.avro.Schema avroSchema, boolean scrubInvalidNames) {
 
         if (schema != null && schema.isOptional()) {
             if (avroSchema.getType() == org.apache.avro.Schema.Type.UNION) {
@@ -825,7 +756,7 @@ public class AvroData {
     }
 
     public org.apache.avro.Schema fromConnectSchema(Schema schema,
-                                                    Map<Schema, org.apache.avro.Schema> schemaMap) {
+            Map<Schema, org.apache.avro.Schema> schemaMap) {
         if (schema == null) {
             return ANYTHING_SCHEMA;
         }
@@ -853,7 +784,7 @@ public class AvroData {
      * avoid re-resolving when presented with the same source schema.
      */
     public org.apache.avro.Schema fromConnectSchema(Schema schema, FromConnectContext fromConnectContext,
-                                                    boolean ignoreOptional) {
+            boolean ignoreOptional) {
         if (schema == null) {
             return ANYTHING_SCHEMA;
         }
@@ -882,11 +813,7 @@ public class AvroData {
                 baseSchema = org.apache.avro.SchemaBuilder.builder().intType();
                 break;
             case INT64:
-                if (schema.name() != null && DEBEZIUM_AVRO_SCHEMA_BUILDERS.containsKey(schema.name())) {
-                    baseSchema = DEBEZIUM_AVRO_SCHEMA_BUILDERS.get(schema.name());
-                } else {
-                    baseSchema = org.apache.avro.SchemaBuilder.builder().longType();
-                }
+                baseSchema = org.apache.avro.SchemaBuilder.builder().longType();
                 break;
             case FLOAT32:
                 baseSchema = org.apache.avro.SchemaBuilder.builder().floatType();
@@ -900,7 +827,7 @@ public class AvroData {
             case STRING:
                 if ((generalizedSumTypeSupport || enhancedSchemaSupport) && schema.parameters() != null
                         && (schema.parameters().containsKey(GENERALIZED_TYPE_ENUM)
-                        || schema.parameters().containsKey(AVRO_TYPE_ENUM))) {
+                                || schema.parameters().containsKey(AVRO_TYPE_ENUM))) {
                     String paramName = generalizedSumTypeSupport ? GENERALIZED_TYPE_ENUM : AVRO_TYPE_ENUM;
                     List<String> symbols = new ArrayList<>();
                     for (Map.Entry<String, String> entry : schema.parameters().entrySet()) {
@@ -915,14 +842,12 @@ public class AvroData {
                     String enumDoc = schema.parameters().get(AVRO_ENUM_DOC_PREFIX_PROP + name);
                     String enumDefault = schema.parameters().get(AVRO_ENUM_DEFAULT_PREFIX_PROP + name);
                     baseSchema = discardTypeDocDefault
-                            ? org.apache.avro.SchemaBuilder.builder().enumeration(enumName)
-                            .doc(schema.parameters().get(CONNECT_ENUM_DOC_PROP))
-                            .symbols(symbols.toArray(new String[symbols.size()]))
-                            : org.apache.avro.SchemaBuilder.builder().enumeration(enumName).doc(enumDoc)
-                            .defaultSymbol(enumDefault)
-                            .symbols(symbols.toArray(new String[symbols.size()]));
-                } else if (schema.name() != null && DEBEZIUM_AVRO_SCHEMA_BUILDERS.containsKey(schema.name())) {
-                    baseSchema = DEBEZIUM_AVRO_SCHEMA_BUILDERS.get(schema.name());
+                        ? org.apache.avro.SchemaBuilder.builder().enumeration(enumName)
+                                .doc(schema.parameters().get(CONNECT_ENUM_DOC_PROP))
+                                .symbols(symbols.toArray(new String[symbols.size()]))
+                        : org.apache.avro.SchemaBuilder.builder().enumeration(enumName).doc(enumDoc)
+                                .defaultSymbol(enumDefault)
+                                .symbols(symbols.toArray(new String[symbols.size()]));
                 } else {
                     baseSchema = org.apache.avro.SchemaBuilder.builder().stringType();
                 }
@@ -1003,9 +928,9 @@ public class AvroData {
                     String namespace = names.getKey();
                     String name = names.getValue();
                     String doc = schema.parameters() != null
-                            ? schema.parameters()
-                            .get(discardTypeDocDefault ? CONNECT_RECORD_DOC_PROP : AVRO_RECORD_DOC_PROP)
-                            : null;
+                        ? schema.parameters()
+                                .get(discardTypeDocDefault ? CONNECT_RECORD_DOC_PROP : AVRO_RECORD_DOC_PROP)
+                        : null;
                     baseSchema = org.apache.avro.Schema.createRecord(name, doc, namespace, false);
                     if (schema.name() != null) {
                         fromConnectContext.cycleReferences.put(schema.name(), baseSchema);
@@ -1066,7 +991,7 @@ public class AvroData {
                     String precisionString = schema.parameters().get(CONNECT_AVRO_DECIMAL_PRECISION_PROP);
                     String scaleString = schema.parameters().get(Decimal.SCALE_FIELD);
                     int precision = precisionString == null ? CONNECT_AVRO_DECIMAL_PRECISION_DEFAULT
-                            : Integer.parseInt(precisionString);
+                        : Integer.parseInt(precisionString);
                     int scale = scaleString == null ? 0 : Integer.parseInt(scaleString);
                     if (scale < 0 || scale > precision) {
                         log.trace(
@@ -1126,7 +1051,7 @@ public class AvroData {
             if (schema.name() != null) {
                 if (Decimal.LOGICAL_NAME.equalsIgnoreCase(schema.name())
                         && (schema.parameters().containsKey(CONNECT_AVRO_DECIMAL_PRECISION_PROP)
-                        || forceLegacyDecimal)) {
+                                || forceLegacyDecimal)) {
                     baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_DECIMAL);
                 } else if (Time.LOGICAL_NAME.equalsIgnoreCase(schema.name())) {
                     baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_TIME_MILLIS);
@@ -1136,8 +1061,6 @@ public class AvroData {
                     baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_DATE);
                 } else if (io.debezium.time.Date.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
                     baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_DATE);
-                } else if (io.debezium.time.MicroDuration.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
-                    baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_DURATION);
                 } else if (io.debezium.time.MicroTime.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
                     baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_TIME_MICROS);
                 } else if (io.debezium.time.MicroTimestamp.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
@@ -1236,7 +1159,7 @@ public class AvroData {
     }
 
     public org.apache.avro.Schema fromConnectSchemaWithCycle(Schema schema,
-                                                             FromConnectContext fromConnectContext, boolean ignoreOptional) {
+            FromConnectContext fromConnectContext, boolean ignoreOptional) {
         org.apache.avro.Schema resolvedSchema;
         if (fromConnectContext.cycleReferences.containsKey(schema.name())) {
             resolvedSchema = fromConnectContext.cycleReferences.get(schema.name());
@@ -1250,7 +1173,7 @@ public class AvroData {
     }
 
     private void addAvroRecordField(List<org.apache.avro.Schema.Field> fields, String fieldName,
-                                    Schema fieldSchema, String fieldDoc, FromConnectContext fromConnectContext) {
+            Schema fieldSchema, String fieldDoc, FromConnectContext fromConnectContext) {
 
         Object defaultVal = null;
         if (fieldSchema.defaultValue() != null) {
@@ -1442,7 +1365,7 @@ public class AvroData {
         }
         ToConnectContext toConnectContext = new ToConnectContext();
         Schema schema = (avroSchema.equals(ANYTHING_SCHEMA)) ? null
-                : toConnectSchema(avroSchema, version, toConnectContext);
+            : toConnectSchema(avroSchema, version, toConnectContext);
         return new SchemaAndValue(schema, toConnectData(schema, value, toConnectContext));
     }
 
@@ -1451,7 +1374,7 @@ public class AvroData {
     }
 
     private Object toConnectData(Schema schema, Object value, ToConnectContext toConnectContext,
-                                 boolean doLogicalConversion) {
+            boolean doLogicalConversion) {
         validateSchemaValue(schema, value);
         if (value == null || value == JsonProperties.NULL_VALUE) {
             return null;
@@ -1666,7 +1589,7 @@ public class AvroData {
                             Schema fieldSchema = field.schema();
                             if (isInstanceOfAvroSchemaTypeForSimpleSchema(fieldSchema, value, index)
                                     || (valueRecordSchema != null
-                                    && schemaEquals(valueRecordSchema, fieldSchema))) {
+                                            && schemaEquals(valueRecordSchema, fieldSchema))) {
                                 converted = new Struct(schema).put(unionMemberFieldName(fieldSchema, index),
                                         toConnectData(fieldSchema, value, toConnectContext));
                                 break;
@@ -1729,7 +1652,7 @@ public class AvroData {
     }
 
     private Schema toConnectSchema(org.apache.avro.Schema schema, Integer version,
-                                   ToConnectContext toConnectContext) {
+            ToConnectContext toConnectContext) {
 
         // We perform caching only at this top level. While it might be helpful to cache some more of
         // the internal conversions, this is the safest place to add caching since some of the internal
@@ -1765,14 +1688,14 @@ public class AvroData {
      * @param toConnectContext context object that holds state while doing the conversion
      */
     private Schema toConnectSchema(org.apache.avro.Schema schema, boolean forceOptional,
-                                   Object fieldDefaultVal, String docDefaultVal, ToConnectContext toConnectContext) {
+            Object fieldDefaultVal, String docDefaultVal, ToConnectContext toConnectContext) {
         return toConnectSchema(schema, forceOptional, fieldDefaultVal, docDefaultVal, null, toConnectContext);
 
     }
 
     private Schema toConnectSchema(org.apache.avro.Schema schema, boolean forceOptional,
-                                   Object fieldDefaultVal, String docDefaultVal, Integer version,
-                                   ToConnectContext toConnectContext) {
+            Object fieldDefaultVal, String docDefaultVal, Integer version,
+            ToConnectContext toConnectContext) {
 
         String type = schema.getProp(CONNECT_TYPE_PROP);
         String logicalType = schema.getProp(AVRO_LOGICAL_TYPE_PROP);
@@ -1900,7 +1823,7 @@ public class AvroData {
                 if (connectMetaData) {
                     if (schema.getDoc() != null) {
                         builder.parameter(discardTypeDocDefault ? CONNECT_ENUM_DOC_PROP
-                                : AVRO_ENUM_DOC_PREFIX_PROP + schema.getName(), schema.getDoc());
+                            : AVRO_ENUM_DOC_PREFIX_PROP + schema.getName(), schema.getDoc());
                     }
                     if (!discardTypeDocDefault && schema.getEnumDefault() != null) {
                         builder.parameter(AVRO_ENUM_DEFAULT_PREFIX_PROP + schema.getName(),
@@ -1932,7 +1855,7 @@ public class AvroData {
                     }
                 }
                 String unionName = generalizedSumTypeSupport ? GENERALIZED_TYPE_UNION_PREFIX + (unionIndex++)
-                        : AVRO_TYPE_UNION;
+                    : AVRO_TYPE_UNION;
                 builder = SchemaBuilder.struct().name(unionName);
                 if (generalizedSumTypeSupport) {
                     builder.parameter(GENERALIZED_TYPE_UNION, unionName);
@@ -1970,7 +1893,7 @@ public class AvroData {
 
         if (discardTypeDocDefault) {
             String docVal = docDefaultVal != null ? docDefaultVal
-                    : (schema.getDoc() != null ? schema.getDoc() : schema.getProp(CONNECT_DOC_PROP));
+                : (schema.getDoc() != null ? schema.getDoc() : schema.getProp(CONNECT_DOC_PROP));
             if (docVal != null) {
                 builder.doc(docVal);
             }
@@ -2085,7 +2008,7 @@ public class AvroData {
     }
 
     private Schema toConnectSchemaWithCycles(org.apache.avro.Schema schema, boolean forceOptional,
-                                             Object fieldDefaultVal, String docDefaultVal, ToConnectContext toConnectContext) {
+            Object fieldDefaultVal, String docDefaultVal, ToConnectContext toConnectContext) {
         Schema resolvedSchema;
         if (toConnectContext.cycleReferences.containsKey(schema)) {
             toConnectContext.detectedCycles.add(schema);
@@ -2104,14 +2027,14 @@ public class AvroData {
     }
 
     private Object defaultValueFromAvro(Schema schema, org.apache.avro.Schema avroSchema, Object value,
-                                        ToConnectContext toConnectContext) {
+            ToConnectContext toConnectContext) {
         Object result = defaultValueFromAvroWithoutLogical(schema, avroSchema, value, toConnectContext);
         // If the schema is a logical type, convert the primitive Avro default into the logical form
         return toConnectLogical(schema, result);
     }
 
     private Object defaultValueFromAvroWithoutLogical(Schema schema, org.apache.avro.Schema avroSchema,
-                                                      Object value, ToConnectContext toConnectContext) {
+            Object value, ToConnectContext toConnectContext) {
         if (value == null || value == JsonProperties.NULL_VALUE) {
             return null;
         }
@@ -2383,7 +2306,7 @@ public class AvroData {
     }
 
     private static boolean fieldListEquals(List<Field> one, List<Field> two,
-                                           Map<Pair<Schema, Schema>, Boolean> cache) {
+            Map<Pair<Schema, Schema>, Boolean> cache) {
         if (one == two) {
             return true;
         } else if (one == null || two == null) {
