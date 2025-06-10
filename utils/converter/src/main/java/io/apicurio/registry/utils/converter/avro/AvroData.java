@@ -1028,10 +1028,6 @@ public class AvroData {
                     org.apache.avro.LogicalTypes.timeMillis().addToSchema(baseSchema);
                 } else if (io.debezium.time.Timestamp.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
                     org.apache.avro.LogicalTypes.timestampMillis().addToSchema(baseSchema);
-                } else if (io.debezium.time.ZonedTime.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
-                    org.apache.avro.LogicalTypes.timeMillis().addToSchema(baseSchema);
-                } else if (io.debezium.time.ZonedTimestamp.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
-                    org.apache.avro.LogicalTypes.timestampMillis().addToSchema(baseSchema);
                 }
             }
 
@@ -1068,10 +1064,6 @@ public class AvroData {
                 } else if (io.debezium.time.Time.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
                     baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_TIME_MILLIS);
                 } else if (io.debezium.time.Timestamp.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
-                    baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_TIMESTAMP_MILLIS);
-                } else if (io.debezium.time.ZonedTime.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
-                    baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_TIME_MILLIS);
-                } else if (io.debezium.time.ZonedTimestamp.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
                     baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_TIMESTAMP_MILLIS);
                 }
             }
