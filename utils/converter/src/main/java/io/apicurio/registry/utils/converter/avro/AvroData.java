@@ -9,10 +9,6 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.apicurio.registry.serde.avro.NonRecordContainer;
 import io.apicurio.registry.utils.converter.ConnectEnum;
 import io.apicurio.registry.utils.converter.ConnectUnion;
-import io.debezium.time.Interval;
-import io.debezium.time.IsoDate;
-import io.debezium.time.IsoTime;
-import io.debezium.time.IsoTimestamp;
 import io.debezium.time.MicroDuration;
 import io.debezium.time.ZonedTime;
 import io.debezium.time.ZonedTimestamp;
@@ -41,11 +37,8 @@ import java.net.URLEncoder;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.time.LocalTime;
-import java.time.Period;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
@@ -202,51 +195,6 @@ public class AvroData {
             }
         });
 
-        TO_CONNECT_LOGICAL_CONVERTERS.put(io.debezium.time.IsoDate.SCHEMA_NAME, new LogicalTypeConverter() {
-            @Override
-            public Object convert(Schema schema, Object value) {
-
-                if (!(value instanceof String)) {
-                    throw new DataException(
-                            "Invalid type for io.debezium.time.IsoDate, underlying representation should be String but was "
-                                    + value.getClass());
-                }
-                if (!(io.debezium.time.IsoDate.SCHEMA_NAME.equals(schema.name())))
-                    throw new DataException("Requested conversion of IsoDate but the schema does not match.");
-                return value;
-            }
-        });
-
-        TO_CONNECT_LOGICAL_CONVERTERS.put(io.debezium.time.IsoTime.SCHEMA_NAME, new LogicalTypeConverter() {
-            @Override
-            public Object convert(Schema schema, Object value) {
-
-                if (!(value instanceof String)) {
-                    throw new DataException(
-                            "Invalid type for io.debezium.time.IsoTime, underlying representation should be Long but was "
-                                    + value.getClass());
-                }
-                if (!(io.debezium.time.IsoTime.SCHEMA_NAME.equals(schema.name())))
-                    throw new DataException("Requested conversion of IsoTime but the schema does not match.");
-                return value;
-            }
-        });
-
-
-        TO_CONNECT_LOGICAL_CONVERTERS.put(io.debezium.time.IsoTimestamp.SCHEMA_NAME, new LogicalTypeConverter() {
-            @Override
-            public Object convert(Schema schema, Object value) {
-
-                if (!(value instanceof String)) {
-                    throw new DataException(
-                            "Invalid type for io.debezium.time.IsoTimestamp, underlying representation should be long but was "
-                                    + value.getClass());
-                }
-                if (!(io.debezium.time.IsoTimestamp.SCHEMA_NAME.equals(schema.name())))
-                    throw new DataException("Requested conversion of IsoTimestamp but the schema does not match.");
-                return value;
-            }
-        });
 
         TO_CONNECT_LOGICAL_CONVERTERS.put(io.debezium.time.MicroTime.SCHEMA_NAME, new LogicalTypeConverter() {
             @Override
@@ -410,10 +358,6 @@ public class AvroData {
     private static final Map<String, org.apache.avro.Schema> DEBEZIUM_AVRO_SCHEMA_BUILDERS = new HashMap<>();
 
     static {
-        DEBEZIUM_AVRO_SCHEMA_BUILDERS.put(Interval.SCHEMA_NAME, org.apache.avro.SchemaBuilder.builder().fixed(AVRO_DEBEZIUM_DURATION_NAME_PROP).size(AVRO_DURATION_FIXED_SIZE_PROP));
-        DEBEZIUM_AVRO_SCHEMA_BUILDERS.put(IsoDate.SCHEMA_NAME, org.apache.avro.SchemaBuilder.builder().intType());
-        DEBEZIUM_AVRO_SCHEMA_BUILDERS.put(IsoTime.SCHEMA_NAME, org.apache.avro.SchemaBuilder.builder().intType());
-        DEBEZIUM_AVRO_SCHEMA_BUILDERS.put(IsoTimestamp.SCHEMA_NAME, org.apache.avro.SchemaBuilder.builder().longType());
         DEBEZIUM_AVRO_SCHEMA_BUILDERS.put(MicroDuration.SCHEMA_NAME, org.apache.avro.SchemaBuilder.builder().fixed(AVRO_DEBEZIUM_DURATION_NAME_PROP).size(AVRO_DURATION_FIXED_SIZE_PROP));
         DEBEZIUM_AVRO_SCHEMA_BUILDERS.put(ZonedTime.SCHEMA_NAME, org.apache.avro.SchemaBuilder.builder().intType());
         DEBEZIUM_AVRO_SCHEMA_BUILDERS.put(ZonedTimestamp.SCHEMA_NAME, org.apache.avro.SchemaBuilder.builder().longType());
@@ -430,66 +374,6 @@ public class AvroData {
                 if (!(io.debezium.time.Date.SCHEMA_NAME.equals(schema.name())))
                     throw new DataException("Requested conversion of Date but the schema does not match.");
                 return io.debezium.time.Date.toEpochDay(value, null);
-            }
-        });
-
-        TO_AVRO_LOGICAL_CONVERTERS.put(io.debezium.time.Interval.SCHEMA_NAME, new LogicalTypeConverter() {
-            @Override
-            public Object convert(Schema schema, Object value) {
-
-                if (!(io.debezium.time.Interval.SCHEMA_NAME.equals(schema.name())))
-                    throw new DataException("Requested conversion of Interval but the schema does not match.");
-
-                Period period = null;
-                Duration duration = null;
-
-                // Split the interval string at T as Java handles intervals of different lengths either in an instance
-                // of Period or Duration
-                String[] intervalParts = ((String) value).split("T");
-
-                if (!intervalParts[0].equals("P"))
-                    period = Period.parse(intervalParts[0]);
-
-                if (intervalParts.length > 1)
-                    duration = Duration.parse("PT" + intervalParts[1]);
-
-                int months = period != null ? Integer.reverseBytes((int) period.toTotalMonths()) : 0;
-                int days = period != null ? Integer.reverseBytes(period.getDays()) : 0;
-                int millis = duration != null ? Integer.reverseBytes((int) duration.toMillis()) : 0;
-
-                return ByteBuffer.allocate(12).putInt(months).putInt(days).putInt(millis).array();
-
-            }
-        });
-
-        TO_AVRO_LOGICAL_CONVERTERS.put(io.debezium.time.IsoDate.SCHEMA_NAME, new LogicalTypeConverter() {
-            @Override
-            public Object convert(Schema schema, Object value) {
-
-                if (!(io.debezium.time.IsoDate.SCHEMA_NAME.equals(schema.name())))
-                    throw new DataException("Requested conversion of IsoDate but the schema does not match.");
-                long epochDay = LocalDate.parse((String) value).toEpochDay();
-                return (int) epochDay;
-            }
-        });
-
-        TO_AVRO_LOGICAL_CONVERTERS.put(io.debezium.time.IsoTime.SCHEMA_NAME, new LogicalTypeConverter() {
-            @Override
-            public Object convert(Schema schema, Object value) {
-
-                if (!(io.debezium.time.IsoTime.SCHEMA_NAME.equals(schema.name())))
-                    throw new DataException("Requested conversion of IsoTime but the schema does not match.");
-                long nanoOfDay = LocalTime.parse((String) value, DateTimeFormatter.ISO_TIME).toNanoOfDay();
-                return (int) (nanoOfDay / 1_000_000);
-            }
-        });
-
-        TO_AVRO_LOGICAL_CONVERTERS.put(io.debezium.time.IsoTimestamp.SCHEMA_NAME, new LogicalTypeConverter() {
-            @Override
-            public Object convert(Schema schema, Object value) {
-                if (!(io.debezium.time.IsoTimestamp.SCHEMA_NAME.equals(schema.name())))
-                    throw new DataException("Requested conversion of IsoTimestamp but the schema does not match.");
-                return Instant.parse((String) value).toEpochMilli();
             }
         });
 
@@ -1317,14 +1201,6 @@ public class AvroData {
                     org.apache.avro.LogicalTypes.date().addToSchema(baseSchema);
                 } else if (io.debezium.time.Date.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
                     org.apache.avro.LogicalTypes.date().addToSchema(baseSchema);
-                } else if (io.debezium.time.Interval.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
-                    org.apache.avro.LogicalTypes.duration().addToSchema(baseSchema);
-                } else if (io.debezium.time.IsoDate.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
-                    org.apache.avro.LogicalTypes.date().addToSchema(baseSchema);
-                } else if (io.debezium.time.IsoTime.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
-                    org.apache.avro.LogicalTypes.timeMillis().addToSchema(baseSchema);
-                } else if (io.debezium.time.IsoTimestamp.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
-                    org.apache.avro.LogicalTypes.timestampMillis().addToSchema(baseSchema);
                 } else if (io.debezium.time.MicroDuration.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
                     org.apache.avro.LogicalTypes.duration().addToSchema(baseSchema);
                 } else if (io.debezium.time.MicroTime.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
@@ -1368,14 +1244,6 @@ public class AvroData {
                     baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_DATE);
                 } else if (io.debezium.time.Date.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
                     baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_DATE);
-                } else if (io.debezium.time.Interval.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
-                    baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_DURATION);
-                } else if (io.debezium.time.IsoDate.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
-                    baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_DATE);
-                } else if (io.debezium.time.IsoTime.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
-                    baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_TIME_MILLIS);
-                } else if (io.debezium.time.IsoTimestamp.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
-                    baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_TIMESTAMP_MILLIS);
                 } else if (io.debezium.time.MicroDuration.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
                     baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_DURATION);
                 } else if (io.debezium.time.MicroTime.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
