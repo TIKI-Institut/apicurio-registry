@@ -1023,8 +1023,6 @@ public class AvroData {
                     org.apache.avro.LogicalTypes.date().addToSchema(baseSchema);
                 } else if (io.debezium.time.Date.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
                     org.apache.avro.LogicalTypes.date().addToSchema(baseSchema);
-                } else if (io.debezium.time.MicroDuration.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
-                    org.apache.avro.LogicalTypes.duration().addToSchema(baseSchema);
                 } else if (io.debezium.time.MicroTime.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
                     org.apache.avro.LogicalTypes.timeMicros().addToSchema(baseSchema);
                 } else if (io.debezium.time.MicroTimestamp.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
