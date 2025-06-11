@@ -279,9 +279,10 @@ public class AvroData {
         TO_AVRO_LOGICAL_CONVERTERS.put(io.debezium.time.Date.SCHEMA_NAME, new LogicalTypeConverter() {
             @Override
             public Object convert(Schema schema, Object value) {
-
-                if (!(io.debezium.time.Date.SCHEMA_NAME.equals(schema.name())))
-                    throw new DataException("Requested conversion of Date but the schema does not match.");
+                if (!(value instanceof Integer)) {
+                    throw new DataException(
+                            "Invalid type for io.debezium.time.Date, expected int32 but was " + value.getClass());
+                }
                 return io.debezium.time.Date.toEpochDay(value, null);
             }
         });
@@ -289,9 +290,10 @@ public class AvroData {
         TO_AVRO_LOGICAL_CONVERTERS.put(io.debezium.time.MicroTime.SCHEMA_NAME, new LogicalTypeConverter() {
             @Override
             public Object convert(Schema schema, Object value) {
-
-                if (!(io.debezium.time.MicroTime.SCHEMA_NAME.equals(schema.name())))
-                    throw new DataException("Requested conversion of MicroTime but the schema does not match.");
+                if (!(value instanceof Long)) {
+                    throw new DataException(
+                            "Invalid type for io.debezium.time.MicroTime, expected int64 but was " + value.getClass());
+                }
                 return value;
             }
         });
@@ -299,9 +301,10 @@ public class AvroData {
         TO_AVRO_LOGICAL_CONVERTERS.put(io.debezium.time.MicroTimestamp.SCHEMA_NAME, new LogicalTypeConverter() {
             @Override
             public Object convert(Schema schema, Object value) {
-
-                if (!(io.debezium.time.MicroTimestamp.SCHEMA_NAME.equals(schema.name())))
-                    throw new DataException("Requested conversion of MicroTimestamp but the schema does not match.");
+                if (!(value instanceof Long)) {
+                    throw new DataException(
+                            "Invalid type for io.debezium.time.MicroTimestamp, expected int64 but was " + value.getClass());
+                }
                 return value;
             }
         });
@@ -309,9 +312,10 @@ public class AvroData {
         TO_AVRO_LOGICAL_CONVERTERS.put(io.debezium.time.Time.SCHEMA_NAME, new LogicalTypeConverter() {
             @Override
             public Object convert(Schema schema, Object value) {
-
-                if (!(io.debezium.time.Time.SCHEMA_NAME.equals(schema.name())))
-                    throw new DataException("Requested conversion of Time but the schema does not match.");
+                if (!(value instanceof Integer)) {
+                    throw new DataException(
+                            "Invalid type for io.debezium.time.Time, expected int32 but was " + value.getClass());
+                }
                 return value;
             }
         });
@@ -319,9 +323,10 @@ public class AvroData {
         TO_AVRO_LOGICAL_CONVERTERS.put(io.debezium.time.Timestamp.SCHEMA_NAME, new LogicalTypeConverter() {
             @Override
             public Object convert(Schema schema, Object value) {
-
-                if (!(io.debezium.time.Timestamp.SCHEMA_NAME.equals(schema.name())))
-                    throw new DataException("Requested conversion of Timestamp but the schema does not match.");
+                if (!(value instanceof Long)) {
+                    throw new DataException(
+                            "Invalid type for io.debezium.time.Timestamp, expected int64 but was " + value.getClass());
+                }
                 return value;
             }
         });
