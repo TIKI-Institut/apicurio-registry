@@ -1,8 +1,5 @@
 package io.apicurio.registry.utils.converter.avro;
 
-import io.debezium.time.Interval;
-import io.debezium.time.IsoDate;
-import io.debezium.time.MicroDuration;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.generic.GenericRecordBuilder;
 import org.apache.kafka.connect.data.Schema;
@@ -12,18 +9,7 @@ import org.apache.kafka.connect.data.Struct;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-import java.math.BigDecimal;
-import java.nio.ByteBuffer;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.LocalTime;
-import java.time.OffsetDateTime;
-import java.time.OffsetTime;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
 import java.util.Date;
 
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -204,110 +190,32 @@ public class AvroDataTest {
         Assertions.assertEquals(epochDays, outputRecord.get(EXAMPLE_VALUE_NAME));
     }
 
-    @Test
-    public void testDebeziumIntervalType() {
-        String interval = Interval.toIsoString(1, 2, 3, 4, 5, BigDecimal.valueOf(6));
-
-        int leMonths = Integer.reverseBytes(14);
-        int leDays = Integer.reverseBytes(3);
-        int leMillis = Integer.reverseBytes(4*60*60*1_000 + 5*60*1_000 + 6*1_000);
-
-        byte[] fixedInterval = ByteBuffer.allocate(12).putInt(leMonths).putInt(leDays).putInt(leMillis).array();
-
-        String expectedAvroSchemaString =
-                "{" +
-                        "  \"type\" : \"fixed\"," +
-                        "  \"name\" : \"debeziumDuration\"," +
-                        "  \"size\" : 12," +
-                        "  \"connect.version\" : 1," +
-                        "  \"connect.name\" : \"" + Interval.SCHEMA_NAME + "\"," +
-                        "  \"logicalType\" : \"duration\"" +
-                        "}";
-
-        org.apache.avro.Schema expectedTypeSchema = new org.apache.avro.Schema.Parser().parse(expectedAvroSchemaString);
-        SchemaAndValue outputSchemaValue = this.debeziumAvroToConnect(Interval.SCHEMA_NAME, "string", interval);
-        Assertions.assertEquals(interval, (((Struct) outputSchemaValue.value()).get(EXAMPLE_VALUE_NAME)));
-
-        GenericRecord outputRecord = this.genericRecordFromConnect(outputSchemaValue);
-        Assertions.assertTrue(outputRecord.getSchema().getField(EXAMPLE_VALUE_NAME).schema().getTypes().contains(expectedTypeSchema));
-        Assertions.assertArrayEquals(fixedInterval, (byte[]) outputRecord.get(EXAMPLE_VALUE_NAME));
-    }
-
-    @Test
-    public void testDebeziumIsoDateType() {
-        // ZonedDateTime.format with DateTimeFormatter.ISO_DATE or ISO_OFFSET_DATE returns the ISO date with a Z appended (e.g. "2025-01-01Z")
-        // String isoDate = io.debezium.time.IsoDate.toIsoString(LocalDate.ofYearDay(2025, 1), null);
-        String isoDate = "2025-01-01";
-        int daysSinceEpoch = (int) LocalDate.parse(isoDate, DateTimeFormatter.ISO_DATE).toEpochDay();
-        String primitiveAvroType = "int";
-
-        org.apache.avro.Schema expectedTypeSchema = this.expectedAvroTypeSchema(IsoDate.SCHEMA_NAME, primitiveAvroType, "date");
-        SchemaAndValue outputSchemaValue = this.debeziumAvroToConnect(IsoDate.SCHEMA_NAME, "string", isoDate);
-        Assertions.assertEquals(isoDate, (((Struct) outputSchemaValue.value()).get(EXAMPLE_VALUE_NAME)));
-
-        GenericRecord outputRecord = this.genericRecordFromConnect(outputSchemaValue);
-        Assertions.assertTrue(this.isRecordValid(outputRecord, Integer.class, expectedTypeSchema));
-        Assertions.assertEquals(daysSinceEpoch, outputRecord.get(EXAMPLE_VALUE_NAME));
-    }
-
-    @Test
-    public void testDebeziumIsoTimeType() {
-        String isoTime = io.debezium.time.IsoTime.toIsoString(LocalTime.of(13, 37, 42), true);
-        int millisSinceMidnight = 60*60*1_000*13 + 60*1_000*37 + 1_000*42;
-        String primitiveAvroType = "int";
-
-        org.apache.avro.Schema expectedTypeSchema = this.expectedAvroTypeSchema(io.debezium.time.IsoTime.SCHEMA_NAME, primitiveAvroType, "time-millis");
-        SchemaAndValue outputSchemaValue = this.debeziumAvroToConnect(io.debezium.time.IsoTime.SCHEMA_NAME, "string", isoTime);
-        Assertions.assertEquals(isoTime, (((Struct) outputSchemaValue.value()).get(EXAMPLE_VALUE_NAME)));
-
-        GenericRecord outputRecord = this.genericRecordFromConnect(outputSchemaValue);
-        Assertions.assertTrue(this.isRecordValid(outputRecord, Integer.class, expectedTypeSchema));
-        Assertions.assertEquals(millisSinceMidnight, outputRecord.get(EXAMPLE_VALUE_NAME));
-    }
-
-    @Test
-    public void testDebeziumIsoTimestampType() {
-
-        String isoTimestamp = io.debezium.time.IsoTimestamp.toIsoString(LocalDateTime.of(2011, 12, 3, 10, 15, 30), null);
-        long epochMilli = Instant.parse(isoTimestamp).toEpochMilli();
-        String primitiveAvroType = "long";
-
-        org.apache.avro.Schema expectedTypeSchema = this.expectedAvroTypeSchema(io.debezium.time.IsoTimestamp.SCHEMA_NAME, primitiveAvroType, "timestamp-millis");
-        SchemaAndValue outputSchemaValue = this.debeziumAvroToConnect(io.debezium.time.IsoTimestamp.SCHEMA_NAME, "string", isoTimestamp);
-        Assertions.assertEquals(isoTimestamp, (((Struct) outputSchemaValue.value()).get(EXAMPLE_VALUE_NAME)));
-
-        GenericRecord outputRecord = this.genericRecordFromConnect(outputSchemaValue);
-        Assertions.assertTrue(this.isRecordValid(outputRecord, Long.class, expectedTypeSchema));
-        Assertions.assertEquals(epochMilli, outputRecord.get(EXAMPLE_VALUE_NAME));
-    }
-
-    @Test
-    public void testDebeziumMicroDurationType() {
-        long durationMicros = MicroDuration.durationMicros(0, 0, 3, 4, 5, 6, null);
-
-        int leDays = Integer.reverseBytes(3);
-        int leMillis = Integer.reverseBytes(4*60*60*1_000 + 5*60*1_000 + 6*1_000);
-
-        byte[] fixedDuration = ByteBuffer.allocate(12).putInt(0).putInt(leDays).putInt(leMillis).array();
-
-        String expectedAvroSchemaString =
-                "{" +
-                        "  \"type\" : \"fixed\"," +
-                        "  \"name\" : \"debeziumDuration\"," +
-                        "  \"size\" : 12," +
-                        "  \"connect.version\" : 1," +
-                        "  \"connect.name\" : \"" + MicroDuration.SCHEMA_NAME + "\"," +
-                        "  \"logicalType\" : \"duration\"" +
-                        "}";
-
-        org.apache.avro.Schema expectedTypeSchema = new org.apache.avro.Schema.Parser().parse(expectedAvroSchemaString);
-        SchemaAndValue outputSchemaValue = this.debeziumAvroToConnect(MicroDuration.SCHEMA_NAME, "long", durationMicros);
-        Assertions.assertEquals(durationMicros, (((Struct) outputSchemaValue.value()).get(EXAMPLE_VALUE_NAME)));
-
-        GenericRecord outputRecord = this.genericRecordFromConnect(outputSchemaValue);
-        Assertions.assertTrue(outputRecord.getSchema().getField(EXAMPLE_VALUE_NAME).schema().getTypes().contains(expectedTypeSchema));
-        Assertions.assertArrayEquals(fixedDuration, (byte[]) outputRecord.get(EXAMPLE_VALUE_NAME));
-    }
+//    @Test
+//    public void testDebeziumMicroDurationType() {
+//        long durationMicros = MicroDuration.durationMicros(0, 0, 3, 4, 5, 6, null);
+//
+//        String expectedAvroSchemaString =
+//                "{" +
+//                "  \"type\" : \"fixed\"," +
+//                "  \"name\" : \"debeziumDuration\"," +
+//                "  \"size\" : 12," +
+//                "  \"connect.version\" : 1," +
+//                "  \"connect.name\" : \"" + MicroDuration.SCHEMA_NAME + "\"," +
+//                "  \"logicalType\" : \"duration\"" +
+//                "}";
+//
+//        org.apache.avro.Schema expectedTypeSchema = new org.apache.avro.Schema.Parser().parse(expectedAvroSchemaString);
+//        TimePeriod avroTimePeriod = TimePeriod.of(0, 3, 4*60*60*1_000 + 5*60*1_000 + 6*1_000);
+//        byte[] expectedAvroDurationFixedBytes = new Conversions.DurationConversion().toFixed(avroTimePeriod, expectedTypeSchema, LogicalTypes.duration()).bytes();
+//
+//        SchemaAndValue connectValue = new SchemaAndValue(MicroDuration.schema(), durationMicros);
+//        AvroData avroData = new AvroData(0);
+//        //noinspection unchecked
+//        NonRecordContainer<Byte[]> result = (NonRecordContainer<Byte[]>) avroData.fromConnectData(connectValue.schema(), connectValue.value());
+//
+//        Assertions.assertEquals(expectedTypeSchema, result.getSchema());
+//        Assertions.assertArrayEquals(expectedAvroDurationFixedBytes, (byte[]) result.getValue());
+//    }
 
     @Test
     public void testDebeziumMicroTimeType() {
@@ -354,51 +262,14 @@ public class AvroDataTest {
         Assertions.assertEquals(millisSinceMidnight, outputRecord.get(EXAMPLE_VALUE_NAME));
     }
 
-    @Test
-    public void testDebeziumZonedTimeType() {
-
-        String zonedTimeIsoString = io.debezium.time.ZonedTime.toIsoString(OffsetTime.of(5, 41, 4, 317_000_000, ZoneOffset.ofHours(2)), ZoneId.of("Europe/Rome"), null);
-        int millisSinceMidnight = (int) (LocalTime.parse(zonedTimeIsoString, DateTimeFormatter.ISO_TIME).toNanoOfDay() / 1_000_000);
-        String primitiveAvroType = "int";
-
-        org.apache.avro.Schema expectedTypeSchema = this.expectedAvroTypeSchema(io.debezium.time.ZonedTime.SCHEMA_NAME, primitiveAvroType, "time-millis");
-        SchemaAndValue outputSchemaValue = this.debeziumAvroToConnect(io.debezium.time.ZonedTime.SCHEMA_NAME, "string", zonedTimeIsoString);
-        Assertions.assertEquals(zonedTimeIsoString, (((Struct) outputSchemaValue.value()).get(EXAMPLE_VALUE_NAME)));
-
-        GenericRecord outputRecord = this.genericRecordFromConnect(outputSchemaValue);
-        Assertions.assertTrue(this.isRecordValid(outputRecord, Integer.class, expectedTypeSchema));
-        Assertions.assertEquals(millisSinceMidnight, outputRecord.get(EXAMPLE_VALUE_NAME));
-    }
-
-    @Test
-    public void testDebeziumZonedTimestampType() {
-
-        String zonedTimestampIsoString = io.debezium.time.ZonedTimestamp.toIsoString(
-                OffsetDateTime.of(LocalDateTime.of(2011, 12, 3, 8, 15, 30), ZoneOffset.ofHours(2)),
-                ZoneId.of("Europe/Rome"),
-                null,
-                null);
-        long unixTimestamp = Instant.parse(zonedTimestampIsoString).toEpochMilli();
-        String primitiveAvroType = "long";
-
-        org.apache.avro.Schema expectedTypeSchema = this.expectedAvroTypeSchema(io.debezium.time.ZonedTimestamp.SCHEMA_NAME, primitiveAvroType, "timestamp-millis");
-        SchemaAndValue outputSchemaValue = this.debeziumAvroToConnect(io.debezium.time.ZonedTimestamp.SCHEMA_NAME, "string", zonedTimestampIsoString);
-        Assertions.assertEquals(zonedTimestampIsoString, (((Struct) outputSchemaValue.value()).get(EXAMPLE_VALUE_NAME)));
-
-        GenericRecord outputRecord = this.genericRecordFromConnect(outputSchemaValue);
-        Assertions.assertTrue(this.isRecordValid(outputRecord, Long.class, expectedTypeSchema));
-        Assertions.assertEquals(unixTimestamp, outputRecord.get(EXAMPLE_VALUE_NAME));
-    }
-
-
     private org.apache.avro.Schema expectedAvroTypeSchema(String connectName, String primitiveType, String logicalType) {
         String typeSchemaString =
                 "{" +
-                        "  \"type\" : \"" + primitiveType + "\"," +
-                        "  \"connect.version\" : 1," +
-                        "  \"connect.name\" : \"" + connectName + "\"," +
-                        "  \"logicalType\" : \"" + logicalType + "\"" +
-                        "}";
+                "  \"type\" : \"" + primitiveType + "\"," +
+                "  \"connect.version\" : 1," +
+                "  \"connect.name\" : \"" + connectName + "\"," +
+                "  \"logicalType\" : \"" + logicalType + "\"" +
+                "}";
         return new org.apache.avro.Schema.Parser().parse(typeSchemaString);
     }
 

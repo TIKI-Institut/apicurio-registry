@@ -26,13 +26,6 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.apicurio.registry.serde.avro.NonRecordContainer;
 import io.apicurio.registry.utils.converter.ConnectEnum;
 import io.apicurio.registry.utils.converter.ConnectUnion;
-import io.debezium.time.Interval;
-import io.debezium.time.IsoDate;
-import io.debezium.time.IsoTime;
-import io.debezium.time.IsoTimestamp;
-import io.debezium.time.MicroDuration;
-import io.debezium.time.ZonedTime;
-import io.debezium.time.ZonedTimestamp;
 import org.apache.avro.AvroTypeException;
 import org.apache.avro.JsonProperties;
 import org.apache.avro.generic.GenericData;
@@ -65,25 +58,7 @@ import java.math.BigDecimal;
 import java.net.URLEncoder;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.LocalTime;
-import java.time.Period;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.IdentityHashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.ListIterator;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.TimeUnit;
+import java.util.*;
 import java.util.regex.Pattern;
 
 
@@ -291,25 +266,12 @@ public class AvroData {
     static final String AVRO_LOGICAL_TIME_MICROS = "time-micros";
     static final String AVRO_LOGICAL_DATE = "date";
     static final String AVRO_LOGICAL_DECIMAL = "decimal";
-    static final String AVRO_LOGICAL_DURATION = "duration";
     static final String AVRO_LOGICAL_DECIMAL_SCALE_PROP = "scale";
     static final String AVRO_LOGICAL_DECIMAL_PRECISION_PROP = "precision";
-    static final String AVRO_DEBEZIUM_DURATION_NAME_PROP = "debeziumDuration";
-    static final Integer AVRO_DURATION_FIXED_SIZE_PROP = 12;
     static final String CONNECT_AVRO_FIXED_SIZE_PROP = "connect.fixed.size";
     static final String CONNECT_AVRO_DECIMAL_PRECISION_PROP = "connect.decimal.precision";
     static final Integer CONNECT_AVRO_DECIMAL_PRECISION_DEFAULT = 64;
 
-    private static final Map<String, org.apache.avro.Schema> DEBEZIUM_AVRO_SCHEMA_BUILDERS = new HashMap<>();
-    static {
-        DEBEZIUM_AVRO_SCHEMA_BUILDERS.put(Interval.SCHEMA_NAME, org.apache.avro.SchemaBuilder.builder().fixed(AVRO_DEBEZIUM_DURATION_NAME_PROP).size(AVRO_DURATION_FIXED_SIZE_PROP));
-        DEBEZIUM_AVRO_SCHEMA_BUILDERS.put(IsoDate.SCHEMA_NAME, org.apache.avro.SchemaBuilder.builder().intType());
-        DEBEZIUM_AVRO_SCHEMA_BUILDERS.put(IsoTime.SCHEMA_NAME, org.apache.avro.SchemaBuilder.builder().intType());
-        DEBEZIUM_AVRO_SCHEMA_BUILDERS.put(IsoTimestamp.SCHEMA_NAME, org.apache.avro.SchemaBuilder.builder().longType());
-        DEBEZIUM_AVRO_SCHEMA_BUILDERS.put(MicroDuration.SCHEMA_NAME, org.apache.avro.SchemaBuilder.builder().fixed(AVRO_DEBEZIUM_DURATION_NAME_PROP).size(AVRO_DURATION_FIXED_SIZE_PROP));
-        DEBEZIUM_AVRO_SCHEMA_BUILDERS.put(ZonedTime.SCHEMA_NAME, org.apache.avro.SchemaBuilder.builder().intType());
-        DEBEZIUM_AVRO_SCHEMA_BUILDERS.put(ZonedTimestamp.SCHEMA_NAME, org.apache.avro.SchemaBuilder.builder().longType());
-    }
     private static final HashMap<String, LogicalTypeConverter> TO_AVRO_LOGICAL_CONVERTERS = new HashMap<>();
 
     static {
@@ -321,91 +283,6 @@ public class AvroData {
                 if (!(io.debezium.time.Date.SCHEMA_NAME.equals(schema.name())))
                     throw new DataException("Requested conversion of Date but the schema does not match.");
                 return io.debezium.time.Date.toEpochDay(value, null);
-            }
-        });
-
-        TO_AVRO_LOGICAL_CONVERTERS.put(Interval.SCHEMA_NAME, new LogicalTypeConverter() {
-            @Override
-            public Object convert(Schema schema, Object value) {
-
-                if (!(Interval.SCHEMA_NAME.equals(schema.name())))
-                    throw new DataException("Requested conversion of Interval but the schema does not match.");
-
-                Period period = null;
-                Duration duration = null;
-
-                // Split the interval string at T as Java handles intervals of different lengths either in an instance
-                // of Period or Duration
-                String[] intervalParts = ((String) value).split("T");
-
-                if (!intervalParts[0].equals("P"))
-                    period = Period.parse(intervalParts[0]);
-
-                if (intervalParts.length > 1)
-                    duration = Duration.parse("PT" + intervalParts[1]);
-
-                int months = period != null ? Integer.reverseBytes((int) period.toTotalMonths()) : 0;
-                int days = period != null ? Integer.reverseBytes(period.getDays()) : 0;
-                int millis = duration != null ? Integer.reverseBytes((int) duration.toMillis()) : 0;
-
-                return ByteBuffer.allocate(12).putInt(months).putInt(days).putInt(millis).array();
-
-            }
-        });
-
-        TO_AVRO_LOGICAL_CONVERTERS.put(IsoDate.SCHEMA_NAME, new LogicalTypeConverter() {
-            @Override
-            public Object convert(Schema schema, Object value) {
-
-                if (!(IsoDate.SCHEMA_NAME.equals(schema.name())))
-                    throw new DataException("Requested conversion of IsoDate but the schema does not match.");
-                long epochDay = LocalDate.parse((String) value).toEpochDay();
-                return (int) epochDay;
-            }
-        });
-
-        TO_AVRO_LOGICAL_CONVERTERS.put(IsoTime.SCHEMA_NAME, new LogicalTypeConverter() {
-            @Override
-            public Object convert(Schema schema, Object value) {
-
-                if (!(IsoTime.SCHEMA_NAME.equals(schema.name())))
-                    throw new DataException("Requested conversion of IsoTime but the schema does not match.");
-                long nanoOfDay = LocalTime.parse((String) value, DateTimeFormatter.ISO_TIME).toNanoOfDay();
-                return (int) (nanoOfDay / 1_000_000);
-            }
-        });
-
-        TO_AVRO_LOGICAL_CONVERTERS.put(IsoTimestamp.SCHEMA_NAME, new LogicalTypeConverter() {
-            @Override
-            public Object convert(Schema schema, Object value) {
-                if (!(IsoTimestamp.SCHEMA_NAME.equals(schema.name())))
-                    throw new DataException("Requested conversion of IsoTimestamp but the schema does not match.");
-                return Instant.parse((String) value).toEpochMilli();
-            }
-        });
-
-        TO_AVRO_LOGICAL_CONVERTERS.put(MicroDuration.SCHEMA_NAME, new LogicalTypeConverter() {
-            @Override
-            public Object convert(Schema schema, Object value) {
-
-                if (!(MicroDuration.SCHEMA_NAME.equals(schema.name())))
-                    throw new DataException("Requested conversion of MicroDuration but the schema does not match.");
-
-                long durationMicros = (long) value;
-                int daysInDuration = 0;
-                Period period = null;
-
-                long microsInDay = TimeUnit.MICROSECONDS.convert(1, TimeUnit.DAYS);
-
-                if (durationMicros > microsInDay) {
-                    daysInDuration = Math.toIntExact(TimeUnit.DAYS.convert(durationMicros, TimeUnit.MICROSECONDS));
-                    durationMicros = durationMicros % microsInDay;
-                }
-                int durationMillis = Math.toIntExact(TimeUnit.MILLISECONDS.convert(durationMicros, TimeUnit.MICROSECONDS));
-
-                int leDays = Integer.reverseBytes(daysInDuration);
-                int leMillis = Integer.reverseBytes(durationMillis);
-                return ByteBuffer.allocate(12).putInt(0).putInt(leDays).putInt(leMillis).array();
             }
         });
 
@@ -446,24 +323,6 @@ public class AvroData {
                 if (!(io.debezium.time.Timestamp.SCHEMA_NAME.equals(schema.name())))
                     throw new DataException("Requested conversion of Timestamp but the schema does not match.");
                 return value;
-            }
-        });
-
-        TO_AVRO_LOGICAL_CONVERTERS.put(ZonedTime.SCHEMA_NAME, new LogicalTypeConverter() {
-            @Override
-            public Object convert(Schema schema, Object value) {
-                if (!(ZonedTime.SCHEMA_NAME.equals(schema.name())))
-                    throw new DataException("Requested conversion of ZonedTime but the schema does not match.");
-                return (int) (LocalTime.parse((String) value, DateTimeFormatter.ISO_TIME).toNanoOfDay() / 1_000_000);
-            }
-        });
-
-        TO_AVRO_LOGICAL_CONVERTERS.put(ZonedTimestamp.SCHEMA_NAME, new LogicalTypeConverter() {
-            @Override
-            public Object convert(Schema schema, Object value) {
-                if (!(ZonedTimestamp.SCHEMA_NAME.equals(schema.name())))
-                    throw new DataException("Requested conversion of ZonedTimestamp but the schema does not match.");
-                return Instant.parse((String) value).toEpochMilli();
             }
         });
 
@@ -677,9 +536,7 @@ public class AvroData {
                         maybeWrapSchemaless(schema, value, ANYTHING_SCHEMA_INT_FIELD),
                         requireContainer);
                 case INT64:
-                    if (!(schema != null && schema.name() != null && DEBEZIUM_AVRO_SCHEMA_BUILDERS.containsKey(schema.name()))) {
                         Long longValue = (Long) value; // Check for correct type
-                    }
                     return maybeAddContainer(
                         avroSchema,
                         maybeWrapSchemaless(schema, value, ANYTHING_SCHEMA_LONG_FIELD),
@@ -711,9 +568,7 @@ public class AvroData {
                         String enumSchemaName = schema.parameters().get(AVRO_TYPE_ENUM);
                         value = enumSymbol(avroSchema, value, enumSchemaName);
                     } else {
-                        if (!(schema != null && schema.name() != null && DEBEZIUM_AVRO_SCHEMA_BUILDERS.containsKey(schema.name()))) {
-                            String stringValue = (String) value; // Check for correct type
-                        }
+                        String stringValue = (String) value; // Check for correct type
                     }
                     return maybeAddContainer(
                             avroSchema,
@@ -1051,12 +906,7 @@ public class AvroData {
                 baseSchema = org.apache.avro.SchemaBuilder.builder().intType();
                 break;
             case INT64:
-                if (schema.name() != null && DEBEZIUM_AVRO_SCHEMA_BUILDERS.containsKey(schema.name())) {
-                    baseSchema = DEBEZIUM_AVRO_SCHEMA_BUILDERS.get(schema.name());
-                }
-                else {
-                    baseSchema = org.apache.avro.SchemaBuilder.builder().longType();
-                }
+                baseSchema = org.apache.avro.SchemaBuilder.builder().longType();
                 break;
             case FLOAT32:
                 baseSchema = org.apache.avro.SchemaBuilder.builder().floatType();
@@ -1093,8 +943,6 @@ public class AvroData {
                             .doc(enumDoc)
                             .defaultSymbol(enumDefault)
                             .symbols(symbols.toArray(new String[symbols.size()]));
-                } else if (schema.name() != null && DEBEZIUM_AVRO_SCHEMA_BUILDERS.containsKey(schema.name())) {
-                    baseSchema = DEBEZIUM_AVRO_SCHEMA_BUILDERS.get(schema.name());
                 } else {
                     baseSchema = org.apache.avro.SchemaBuilder.builder().stringType();
                 }
@@ -1283,16 +1131,6 @@ public class AvroData {
                     org.apache.avro.LogicalTypes.date().addToSchema(baseSchema);
                 } else if (io.debezium.time.Date.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
                     org.apache.avro.LogicalTypes.date().addToSchema(baseSchema);
-                } else if (Interval.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
-                    org.apache.avro.LogicalTypes.duration().addToSchema(baseSchema);
-                } else if (IsoDate.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
-                    org.apache.avro.LogicalTypes.date().addToSchema(baseSchema);
-                } else if (IsoTime.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
-                    org.apache.avro.LogicalTypes.timeMillis().addToSchema(baseSchema);
-                } else if (IsoTimestamp.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
-                    org.apache.avro.LogicalTypes.timestampMillis().addToSchema(baseSchema);
-                } else if (MicroDuration.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
-                    org.apache.avro.LogicalTypes.duration().addToSchema(baseSchema);
                 } else if (io.debezium.time.MicroTime.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
                     org.apache.avro.LogicalTypes.timeMicros().addToSchema(baseSchema);
                 } else if (io.debezium.time.MicroTimestamp.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
@@ -1300,10 +1138,6 @@ public class AvroData {
                 } else if (io.debezium.time.Time.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
                     org.apache.avro.LogicalTypes.timeMillis().addToSchema(baseSchema);
                 } else if (io.debezium.time.Timestamp.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
-                    org.apache.avro.LogicalTypes.timestampMillis().addToSchema(baseSchema);
-                } else if (ZonedTime.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
-                    org.apache.avro.LogicalTypes.timeMillis().addToSchema(baseSchema);
-                } else if (ZonedTimestamp.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
                     org.apache.avro.LogicalTypes.timestampMillis().addToSchema(baseSchema);
                 }
             }
@@ -1334,16 +1168,6 @@ public class AvroData {
                     baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_DATE);
                 } else if (io.debezium.time.Date.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
                     baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_DATE);
-                } else if (Interval.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
-                    baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_DURATION);
-                } else if (IsoDate.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
-                    baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_DATE);
-                } else if (IsoTime.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
-                    baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_TIME_MILLIS);
-                } else if (IsoTimestamp.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
-                    baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_TIMESTAMP_MILLIS);
-                } else if (MicroDuration.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
-                    baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_DURATION);
                 } else if (io.debezium.time.MicroTime.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
                     baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_TIME_MICROS);
                 } else if (io.debezium.time.MicroTimestamp.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
@@ -1351,10 +1175,6 @@ public class AvroData {
                 } else if (io.debezium.time.Time.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
                     baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_TIME_MILLIS);
                 } else if (io.debezium.time.Timestamp.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
-                    baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_TIMESTAMP_MILLIS);
-                } else if (ZonedTime.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
-                    baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_TIME_MILLIS);
-                } else if (ZonedTimestamp.SCHEMA_NAME.equalsIgnoreCase(schema.name())) {
                     baseSchema.addProp(AVRO_LOGICAL_TYPE_PROP, AVRO_LOGICAL_TIMESTAMP_MILLIS);
                 }
             }
