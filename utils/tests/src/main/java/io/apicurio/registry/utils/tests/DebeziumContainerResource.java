@@ -25,7 +25,7 @@ public class DebeziumContainerResource implements QuarkusTestResourceLifecycleMa
             .withNetwork(network).withNetworkAliases("postgres");
 
     public static DebeziumContainer debeziumContainer = new DebeziumContainer(
-            "quay.io/debezium/connect:2.6.2.Final").withNetwork(network).withKafka(kafkaContainer)
+            "quay.io/debezium/connect:3.1.2.Final").withNetwork(network).withKafka(kafkaContainer)
             .dependsOn(kafkaContainer);
 
     @Override

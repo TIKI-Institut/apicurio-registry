@@ -112,7 +112,7 @@
     <module>schema-util/xsd</module>
     <module>schema-util/util-provider</module>
 
-    <module>operator</module>
+<!--    <module>operator</module>-->
   </modules>
 
   <scm>
@@ -215,7 +215,10 @@
     <commons-codec.version>1.18.0</commons-codec.version>
     <apicurio-common-rest-client.version>0.1.18.Final</apicurio-common-rest-client.version>
     <kafka-clients.version>3.9.0</kafka-clients.version>
-    <debezium.version>2.6.2.Final</debezium.version>
+    <debezium.version>3.1.2.Final</debezium.version>
+    <!-- debezium testcontainers is only build for java 21 in the 3.x release so we can't use it here.
+    Nevertheless the older 2.x release is working and has no dependencies on debezium-core itself !-->
+    <debezium.testcontainers.version>2.7.4.Final</debezium.testcontainers.version>
     <pulsar-clients.version>3.3.4</pulsar-clients.version>
     <commons-beanutils.version>1.10.0</commons-beanutils.version>
 
@@ -675,6 +678,11 @@
           </exclusion>
         </exclusions>
       </dependency>
+      <dependency>
+        <groupId>io.debezium</groupId>
+        <artifactId>debezium-core</artifactId>
+        <version>${debezium.version}</version>
+      </dependency>
 
       <!-- GraphQL -->
       <dependency>
@@ -806,7 +814,7 @@
       <dependency>
         <groupId>io.debezium</groupId>
         <artifactId>debezium-testing-testcontainers</artifactId>
-        <version>${debezium.version}</version>
+        <version>${debezium.testcontainers.version}</version>
       </dependency>
       <dependency>
         <groupId>io.strimzi</groupId>
