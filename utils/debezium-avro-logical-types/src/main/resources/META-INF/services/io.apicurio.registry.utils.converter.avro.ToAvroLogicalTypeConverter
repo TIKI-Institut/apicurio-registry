@@ -1,0 +1,5 @@
+io.apicurio.registry.utils.converter.avro.debezium.DebeziumDateToAvro
+io.apicurio.registry.utils.converter.avro.debezium.DebeziumMicroTimestampToAvro
+io.apicurio.registry.utils.converter.avro.debezium.DebeziumMicroTimeToAvro
+io.apicurio.registry.utils.converter.avro.debezium.DebeziumTimestampToAvro
+io.apicurio.registry.utils.converter.avro.debezium.DebeziumTimeToAvro
